@@ -99,7 +99,7 @@ class AreaAttackSkill(Skill):
         for target in targets:
             raw_damage = user.stats.attack + self.power
             actual_dmg = target.take_damage(raw_damage)
-            print(f"  -> {target.name} took {actual_dmg} dmg.")
+            print(f"  -> {target.name} took {actual_dmg} damage.")
 
 
 class HealingSkill(Skill):
