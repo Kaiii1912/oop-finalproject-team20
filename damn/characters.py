@@ -1,12 +1,14 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional, TYPE_CHECKING
+import random
 
 from battle_types import Team, Stats, BattleAction, ActionType
+# 為了在 available_actions 裡判斷技能種類，需要引入技能類別
+from skills import Skill, AreaAttackSkill, SingleTargetAttackSkill, HealingSkill
 
 if TYPE_CHECKING:
     from dungeon_env import DungeonBattleEnv
-    from skills import Skill
     from ai_strategies import EnemyAIStrategy
     from agents import BaseAgent
 
@@ -15,10 +17,6 @@ if TYPE_CHECKING:
 class Character:
     """
     玩家 / 敵人共同基底類別。
-
-    展示：
-    - 繼承：PlayerCharacter / EnemyCharacter / FireDragon
-    - 封裝：HP/MP 操作、傷害計算、行動選擇
     """
     name: str
     team: Team
@@ -34,10 +32,6 @@ class Character:
 
     @property
     def stats(self) -> Stats:
-        """
-        核心版：直接回傳 base_stats。
-        之後要加裝備系統，可以在這裡套裝備加成。
-        """
         return self.base_stats
 
     # -------- 生命 / 魔力 相關 --------
@@ -46,9 +40,6 @@ class Character:
         return self.hp > 0
 
     def take_damage(self, raw_amount: int) -> int:
-        """
-        受到傷害，回傳實際扣血量。
-        """
         if raw_amount <= 0 or not self.is_alive():
             return 0
         dmg = max(1, raw_amount - self.stats.defense)
@@ -56,9 +47,6 @@ class Character:
         return dmg
 
     def heal(self, amount: int) -> int:
-        """
-        補血，回傳實際回復量。
-        """
         if amount <= 0 or not self.is_alive():
             return 0
         old = self.hp
@@ -77,38 +65,100 @@ class Character:
     # -------- 回合流程（Template Method）--------
 
     def take_turn(self, env: "DungeonBattleEnv", agent: Optional["BaseAgent"] = None) -> Optional[BattleAction]:
-        """
-        一個完整回合：
-        - 玩家：交給 Agent 決定
-        - 敵人：交給自身的 AI 決定
-        """
         if not self.can_act():
             return None
 
         if self.team == Team.PLAYERS:
+            # 玩家交給外部 Agent
             if agent is None:
                 raise ValueError("PlayerCharacter needs an agent to act.")
-            action = agent.select_action(env, self)  # BaseAgent 由 agents.py 定義
+            action = agent.select_action(env, self)
         else:
-            # 交給子類 (EnemyCharacter / FireDragon) 實作
+            # 敵人交給自身的 decide_action (AI)
             action = self.decide_action(env)
 
         return action
 
-    # -------- 可用行動列表（讓 Agent / AI 使用）--------
+    # --------行動列表--------
 
     def available_actions(self, env: "DungeonBattleEnv") -> List[BattleAction]:
         """
-        TODO[A]:
-        由這裡根據當前狀況，產生一組合法的 BattleAction：
-        - BASIC_ATTACK：對每個敵人產生一個可選目標
-        - USE_SKILL：對每個技能與合法目標組合產生行動
-        - DEFEND / PASS：可以各自做成一個動作
-        具體如何編 target_ids，可以跟組員協調。
+        列出當前所有合法行動，供 Random/Heuristic Agent 選擇。
+        需將「物件目標」轉換回「Index 列表」。
         """
-        raise NotImplementedError
+        actions = []
+        
+        # 定義敵我列表
+        enemies_list = env.enemies if self.team == Team.PLAYERS else env.players
+        allies_list = env.players if self.team == Team.PLAYERS else env.enemies
 
-    # -------- 敵人 AI 用：預設不實作（交給子類）--------
+        # 1. 普通攻擊 (BASIC_ATTACK)
+        # 對每一個活著的敵人產生一個選項
+        for idx, target in enumerate(enemies_list):
+            if target.is_alive():
+                actions.append(BattleAction(
+                    actor=self,
+                    action_type=ActionType.BASIC_ATTACK,
+                    target_ids=[idx],
+                    skill=None
+                ))
+
+        # 2. 使用技能 (USE_SKILL)
+        for skill in self.skills:
+            if skill.can_use(self, env):
+                # 取得該技能合法的目標物件
+                valid_targets = skill.get_valid_targets(self, env)
+                if not valid_targets:
+                    continue
+                
+                # 根據技能類型分裝 Action
+                
+                # A. 範圍攻擊 (Action 只會有一個，目標是所有符合的人)
+                if isinstance(skill, AreaAttackSkill):
+                    target_indices = []
+                    # 範圍技通常打敵方，去 enemies_list 找對應的 index
+                    search_list = enemies_list if self.team == Team.PLAYERS else env.players
+                    
+                    for t in valid_targets:
+                        for i, original in enumerate(search_list):
+                            if t is original:
+                                target_indices.append(i)
+                                break
+                    
+                    if target_indices:
+                        actions.append(BattleAction(
+                            actor=self,
+                            action_type=ActionType.USE_SKILL,
+                            target_ids=target_indices,
+                            skill=skill
+                        ))
+
+                # B. 單體 / 補血 (對每個合法目標產生一個 Action)
+                else:
+                    # 決定去哪個列表找 index
+                    if isinstance(skill, HealingSkill):
+                        search_list = allies_list
+                    else:
+                        search_list = enemies_list
+                    
+                    for t in valid_targets:
+                        found_idx = -1
+                        for i, original in enumerate(search_list):
+                            if t is original:
+                                found_idx = i
+                                break
+                        
+                        if found_idx != -1:
+                            actions.append(BattleAction(
+                                actor=self,
+                                action_type=ActionType.USE_SKILL,
+                                target_ids=[found_idx],
+                                skill=skill
+                            ))
+
+        return actions
+
+    # -------- 敵人 AI 用 --------
 
     def decide_action(self, env: "DungeonBattleEnv") -> BattleAction:
         raise NotImplementedError("Enemy types should override decide_action().")
@@ -116,39 +166,68 @@ class Character:
 
 @dataclass
 class PlayerCharacter(Character):
-    """
-    玩家角色。
-    """
     role: str = "Adventurer"
 
 
 @dataclass
 class EnemyCharacter(Character):
-    """
-    敵人角色，持有一個 AI Strategy。
-    """
     ai: "EnemyAIStrategy" = field(default=None)
 
     def decide_action(self, env: "DungeonBattleEnv") -> BattleAction:
-        return self.ai.choose_action(self, env)
+        # 一般小怪：委託給 Strategy (由成員 C 寫的 Strategy Pattern)
+        if self.ai:
+            return self.ai.choose_action(self, env)
+        return BattleAction(self, ActionType.PASS)
 
 
 @dataclass
 class FireDragon(EnemyCharacter):
     """
     最終 Boss：噴火龍。
-    核心版：直接在 decide_action 中用血量比例決定招式。
-    之後可以再抽成 DragonPhase state pattern。
     """
-
-    enraged_threshold: float = 0.3  # HP 低於 30% 進入狂暴模式
+    enraged_threshold: float = 0.3
 
     def decide_action(self, env: "DungeonBattleEnv") -> BattleAction:
+        # 計算血量比例
         hp_ratio = self.hp / max(1, self.stats.max_hp)
-        # TODO[A/C]: 在這裡決定火龍在「正常 / 狂暴」狀態下要用的技能
-        # 例如：
-        # if hp_ratio < self.enraged_threshold:
-        #     -> 使用範圍攻擊技能（噴火）
-        # else:
-        #     -> 使用單體攻擊或普通攻擊
-        raise NotImplementedError
+        
+        # 分類技能
+        area_skills = [s for s in self.skills if isinstance(s, AreaAttackSkill)]
+        single_skills = [s for s in self.skills if isinstance(s, SingleTargetAttackSkill)]
+        
+        # 找活著的玩家
+        alive_player_indices = [i for i, p in enumerate(env.players) if p.is_alive()]
+        if not alive_player_indices:
+            return BattleAction(self, ActionType.PASS)
+
+        # 1. 狂暴模式：HP < 30% 且有 MP，強制用範圍技
+        if hp_ratio < self.enraged_threshold:
+            for skill in area_skills:
+                if skill.can_use(self, env):
+                    print(f"*** {self.name} is ENRAGED! ROAR! ***")
+                    return BattleAction(
+                        actor=self,
+                        action_type=ActionType.USE_SKILL,
+                        target_ids=alive_player_indices,
+                        skill=skill
+                    )
+        
+        # 2. 正常模式：有 70% 機率使用單體技能 (如果有魔)
+        if single_skills and random.random() < 0.7:
+            skill = random.choice(single_skills)
+            if skill.can_use(self, env):
+                target_idx = random.choice(alive_player_indices)
+                return BattleAction(
+                    actor=self,
+                    action_type=ActionType.USE_SKILL,
+                    target_ids=[target_idx],
+                    skill=skill
+                )
+
+        # 3. 沒魔或隨機到普攻
+        target_idx = random.choice(alive_player_indices)
+        return BattleAction(
+            actor=self,
+            action_type=ActionType.BASIC_ATTACK,
+            target_ids=[target_idx]
+        )

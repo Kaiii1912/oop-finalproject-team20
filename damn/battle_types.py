@@ -12,13 +12,8 @@ class Team(Enum):
     PLAYERS = "players"
     ENEMIES = "enemies"
 
-
 @dataclass
 class Stats:
-    """
-    角色基本數值。
-    TODO[A]: 如需可在此擴充 critical / evade 等欄位。
-    """
     max_hp: int
     max_mp: int
     attack: int
@@ -35,11 +30,7 @@ class ActionType(Enum):
 
 @dataclass
 class BattleAction:
-    """
-    一個「行動」物件：誰(actor) 做了什麼(action_type) 對誰(target_ids)，
-    如果是技能則附帶 skill。
-    """
     actor: "Character"
     action_type: ActionType
-    target_ids: Optional[List[int]] = None  # 例如 env.players 或 env.enemies 的 index
+    target_ids: Optional[List[int]] = None  # 存的是 env.players 或 env.enemies 的 index
     skill: Optional["Skill"] = None
