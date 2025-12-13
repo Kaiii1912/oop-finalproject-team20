@@ -11,7 +11,6 @@ from config_dungeon import create_default_players, build_dungeon_floors
 from agents import HeuristicDungeonAgent  # 也可以換 RandomDungeonAgent
 from battle_types import Team
 
-# 視窗大小與顏色設定
 WIDTH, HEIGHT = 960, 640
 FPS = 60
 TURN_INTERVAL = 0.8  # 每一回合之間停留秒數
@@ -69,7 +68,7 @@ class DungeonPygameApp:
         self.truncated: bool = False
         self.total_reward: float = 0.0
 
-        self.turn_timer: float = 0.5  # 開局前稍等一下
+        self.turn_timer: float = 0.5 
         self.running: bool = True
         self.game_state: str = "PLAYING"  # PLAYING / GAME_OVER / VICTORY
 
@@ -201,23 +200,19 @@ class DungeonPygameApp:
 
         player_pos, enemy_pos = self._get_layout_positions(len(players), len(enemies))
 
-        # 畫玩家（奇異鳥隊伍）
         for p, (x, y) in zip(players, player_pos):
             self._draw_single_character(p, x, y, is_boss=False)
 
-        # 畫敵人
         for e, (x, y) in zip(enemies, enemy_pos):
             is_boss = e.__class__.__name__ == "FireDragon"
             self._draw_single_character(e, x, y, is_boss=is_boss)
 
     def _draw_single_character(self, ch, x: int, y: int, is_boss: bool = False) -> None:
-        # 決定顏色
         if ch.team == Team.PLAYERS:
             body_color = PLAYER_COLOR
         else:
             body_color = BOSS_COLOR if is_boss else ENEMY_COLOR
 
-        # 若死亡，顏色變暗
         if not ch.is_alive():
             body_color = (80, 80, 80)
 
@@ -286,7 +281,6 @@ class DungeonPygameApp:
         self._draw_characters()
         self._draw_ui()
         self._draw_end_overlay()
-
 
 def main() -> None:
     app = DungeonPygameApp()
