@@ -1,4 +1,5 @@
 from __future__ import annotations
+from battle_types import ActionType
 from abc import ABC, abstractmethod
 from typing import Dict, Any, TYPE_CHECKING
 import random
@@ -74,16 +75,26 @@ class HeuristicDungeonAgent(BaseAgent):
             if boss_acts: return boss_acts[0]
 
         # 3. 打最弱 (Kill fast)
-        alive_enemies = [e for e in env.enemies if e.is_alive()]
-        if alive_enemies:
-            weakest = min(alive_enemies, key=lambda e: e.hp)
-            w_idx = env.enemies.index(weakest)
+        alive_enemy_objs = [e for e in env.enemies if e.is_alive()]
+        
+        if alive_enemy_objs:
+            # Find the actual object with the lowest HP
+            weakest_enemy = min(alive_enemy_objs, key=lambda e: e.hp)
+            # Find its index in the original environment list to create the action
+            w_idx = env.enemies.index(weakest_enemy)
             
             target_acts = [a for a in legal_actions if a.target_ids and a.target_ids[0] == w_idx]
             if target_acts:
+                # Prioritize using a skill if available against the weakest target
                 skill_hits = [a for a in target_acts if a.action_type == ActionType.USE_SKILL]
                 if skill_hits: return skill_hits[0]
                 return target_acts[0]
+
+        if not alive_enemies:
+            return BattleAction(actor=actor, action_type=ActionType.PASS)
+            
+        # 正常選一個血最少的敵人攻擊
+        target_idx = env.enemies.index(min(alive_enemy_objs, key=lambda e: e.hp))
 
         return random.choice(legal_actions)
 

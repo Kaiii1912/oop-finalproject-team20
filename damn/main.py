@@ -55,7 +55,7 @@ def main() -> None:
     # agent = RandomDungeonAgent()
     agent = HeuristicDungeonAgent()
     # agent = QLearningDungeonAgent()  # Bonus 時再用
-
+    
     total_reward = run_dungeon(env, agent)
     print("\nTotal reward:", total_reward)
 
