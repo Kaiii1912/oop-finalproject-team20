@@ -1,192 +1,123 @@
-from __future__ import annotations
-from dataclasses import dataclass
-from typing import List, Dict, Any, TYPE_CHECKING
-
-from battle_types import BattleAction, ActionType, Team
-from characters import PlayerCharacter, EnemyCharacter
-
-if TYPE_CHECKING:
-    from characters import Character
-
+from typing import List, Tuple, Optional
+from battle_types import Team, ActionType, BattleAction
+from characters import Character, PlayerCharacter, EnemyCharacter
 
 class EventLog:
-    """
-    戰鬥訊息紀錄。
-    """
+    """封裝戰鬥訊息的紀錄與輸出 [cite: 89-90]"""
+    def __init__(self):
+        self.logs: List[str] = []
 
-    def __init__(self) -> None:
-        self.entries: List[str] = []
+    def add(self, message: str):
+        self.logs.append(message)
+        print(message)  # 同步印出到終端機以便文字版 Demo [cite: 115]
 
-    def add(self, msg: str) -> None:
-        self.entries.append(msg)
-
-    def flush(self) -> List[str]:
-        out = self.entries[:]
-        self.entries.clear()
-        return out
-
-
-@dataclass
-class DungeonFloorConfig:
-    """
-    地下城單一樓層配置：
-    - 名稱
-    - 一組 factory，用來產生敵人實例
-    - 是否為 Boss 樓層
-    """
-    name: str
-    enemy_factories: List[callable]  # List[Callable[[], EnemyCharacter]]
-    is_boss_floor: bool = False
-
+    def clear(self):
+        self.logs.clear()
 
 class TurnManager:
-    """
-    根據 speed 決定本回合出手順序。
-    """
+    """負責管理戰鬥回合順序 [cite: 85]"""
+    @staticmethod
+    def get_turn_order(players: List[Character], enemies: List[Character]) -> List[Character]:
+        """根據角色 stats.speed 由大到小排序 [cite: 86, 155]"""
+        all_actors = [c for c in players + enemies if c.is_alive()]
+        return sorted(all_actors, key=lambda c: c.stats.speed, reverse=True)
 
-    def __init__(self, env: "DungeonBattleEnv") -> None:
-        self.env = env
-
-    def get_turn_order(self) -> List["Character"]:
-        from characters import Character  # 避免循環 import
-        chars: List[Character] = [
-            c for c in (self.env.players + self.env.enemies) if c.is_alive()
-        ]
-        # TODO[B]: 依 stats.speed 由大到小排序，回傳結果
-        raise NotImplementedError
-
+class DungeonFloorConfig:
+    """每層地城的配置 [cite: 87]"""
+    def __init__(self, name: str, enemy_factory_func, is_boss_floor: bool = False):
+        self.name = name
+        self.enemy_factory_func = enemy_factory_func
+        self.is_boss_floor = is_boss_floor
 
 class DungeonBattleEnv:
     """
-    三層地下城戰鬥環境。
-
-    介面類似 Gym：
-    - reset(floor_idx)
-    - step(player_action)
-    - render()
+    地下城戰鬥環境，負責主要的遊戲規則與狀態管理 [cite: 78, 174]。
+    使用 Composition 模式持有玩家與敵人隊伍 。
     """
-
-    def __init__(self, floors: List[DungeonFloorConfig], players: List[PlayerCharacter]):
-        self.floors = floors
+    def __init__(self, players: List[PlayerCharacter], floor_configs: List[DungeonFloorConfig]):
         self.players = players
+        self.floor_configs = floor_configs
+        self.current_floor_idx = 0
         self.enemies: List[EnemyCharacter] = []
-
-        self.current_floor_idx: int = 0
-        self.turn_count: int = 0
-
         self.event_log = EventLog()
-        self.turn_manager = TurnManager(self)
+        self.terminated = False
+        self.turn_order: List[Character] = []
 
-    def reset(self, floor_idx: int = 0) -> Dict[str, Any]:
-        """
-        初始化某一樓層。
-        """
+    def reset(self, floor_idx: int = 0):
+        """重置地城至特定樓層 [cite: 79]"""
         self.current_floor_idx = floor_idx
-        self.turn_count = 0
-        self.event_log = EventLog()
-        self.turn_manager = TurnManager(self)
+        config = self.floor_configs[floor_idx]
+        self.enemies = config.enemy_factory_func()
+        self.event_log.clear()
+        self.event_log.add(f"--- Entering Floor {floor_idx + 1}: {config.name} ---")
+        self.terminated = False
+        return self._get_obs()
 
-        # 重置玩家
-        for p in self.players:
-            p.hp = p.base_stats.max_hp
-            p.mp = p.base_stats.max_mp
+    def _get_obs(self):
+        """回傳當前環境狀態（簡化版） [cite: 84]"""
+        return {"players": self.players, "enemies": self.enemies}
 
-        floor = self.floors[floor_idx]
-        self.enemies = [factory() for factory in floor.enemy_factories]
+    def step(self, player_action: BattleAction) -> Tuple[dict, float, bool, bool, dict]:
+        """執行一個完整的回合流程 [cite: 79, 156]"""
+        if self.terminated:
+            return self._get_obs(), 0, True, False, {}
 
-        return self._build_observation()
+        self.turn_order = TurnManager.get_turn_order(self.players, self.enemies)
+        
+        for actor in self.turn_order:
+            if not actor.is_alive():
+                continue
 
-    def step(self, player_action: BattleAction) -> tuple[Dict[str, Any], float, bool, bool, Dict[str, Any]]:
-        """
-        執行一個完整回合：
-        - 依 speed 取得行動順序
-        - 主控玩家用傳入的 player_action
-        - 敵人用自己的 AI 決定行動
-        - 回傳 obs, reward, terminated, truncated, info
-        """
-        from agents import BaseAgent  # type hint 用，不會實際 import
+            # 執行行動
+            if actor.team == Team.PLAYERS:
+                # 這裡假設 step 是由 Kiwi 觸發，如果是隊友則可擴充 Agent 邏輯 [cite: 158]
+                action = player_action if actor.name == "Kiwi" else actor.take_turn(self, None) 
+            else:
+                action = actor.take_turn(self) # 敵人 AI 決定行動 [cite: 159]
 
-        self.turn_count += 1
-        reward = 0.0
-        terminated = False
-        truncated = False
-        info: Dict[str, Any] = {}
+            if action:
+                self._apply_action(action)
 
-        # TODO[B/C]:
-        # 1. 取得 turn_order = self.turn_manager.get_turn_order()
-        # 2. 對每個 actor：
-        #    - 若是 players[0]：使用傳入的 player_action 呼叫 _apply_action(...)
-        #    - 若是其他敵人：呼叫 actor.take_turn(self) 取得 action，再 _apply_action(...)
-        # 3. 判斷是否所有 enemies 死亡 → 勝利，reward += 1, terminated = True
-        #    判斷是否所有 players 死亡 → 失敗，reward -= 1, terminated = True
-        # 4. 每回合可以小小扣分 reward -= 0.01 以避免拖太久
+            # 每次行動後檢查勝負
+            if self._check_battle_over():
+                break
 
-        obs = self._build_observation()
-        return obs, reward, terminated, truncated, info
+        reward = 1.0 if not any(not e.is_alive() for e in self.enemies) else 0.0
+        return self._get_obs(), reward, self.terminated, False, {"log": self.event_log.logs}
 
-    def render(self) -> None:
-        floor = self.floors[self.current_floor_idx]
-        print(f"\n=== Floor {self.current_floor_idx + 1}: {floor.name} | Turn {self.turn_count} ===")
-
-        print("[Party]")
-        for p in self.players:
-            status = "DEAD" if not p.is_alive() else f"HP {p.hp}/{p.stats.max_hp} MP {p.mp}/{p.stats.max_mp}"
-            print(f"  - {p.name:10s} ({p.role:7s}) [{status}]")
-
-        print("[Enemies]")
-        for e in self.enemies:
-            status = "DEAD" if not e.is_alive() else f"HP {e.hp}/{e.stats.max_hp} MP {e.mp}/{e.stats.max_mp}"
-            print(f"  - {e.name:15s} [{status}]")
-
-        for line in self.event_log.flush():
-            print("  *", line)
-
-    def _build_observation(self) -> Dict[str, Any]:
-        """
-        簡單用 dict 表示目前遊戲狀態，之後要接 RL 可以再設計 state encoding。
-        """
-        return {
-            "floor_idx": self.current_floor_idx,
-            "turn": self.turn_count,
-            "players": [
-                {
-                    "name": p.name,
-                    "hp": p.hp,
-                    "max_hp": p.stats.max_hp,
-                    "mp": p.mp,
-                    "max_mp": p.stats.max_mp,
-                    "alive": p.is_alive(),
-                }
-                for p in self.players
-            ],
-            "enemies": [
-                {
-                    "name": e.name,
-                    "hp": e.hp,
-                    "max_hp": e.stats.max_hp,
-                    "mp": e.mp,
-                    "max_mp": e.stats.max_mp,
-                    "alive": e.is_alive(),
-                }
-                for e in self.enemies
-            ],
-        }
-
-    def _apply_action(self, action: BattleAction) -> None:
-        """
-        實際執行一個 BattleAction。
-        """
+    def _apply_action(self, action: BattleAction):
+        """根據 ActionType 處理普攻、技能、防禦等邏輯 [cite: 162-163]"""
         actor = action.actor
-        if not actor.is_alive():
-            return
+        targets = []
+        
+        # 解析目標 Index 到物件
+        if action.target_ids is not None:
+            target_pool = self.enemies if actor.team == Team.PLAYERS else self.players
+            targets = [target_pool[i] for i in action.target_ids if i < len(target_pool)]
 
-        # TODO[B/A]:
-        # 根據 action_type：
-        # - BASIC_ATTACK:
-        #     依 target_ids 找到目標（在 players 或 enemies），計算傷害，呼叫 target.take_damage(...)
-        #     並用 self.event_log.add(...) 記錄
-        # - USE_SKILL:
-        #     檢查 mp，呼叫 action.skill.apply(actor, targets, self)
-        # - DEFEND / PASS:
-        #     可以先只紀錄文字，不一定要有實際效果
-        raise NotImplementedError
+        if action.action_type == ActionType.BASIC_ATTACK and targets:
+            dmg = targets[0].take_damage(actor.stats.attack)
+            self.event_log.add(f"{actor.name} attacked {targets[0].name} for {dmg} damage.")
+        
+        elif action.action_type == ActionType.USE_SKILL and action.skill:
+            # 利用成員 A 寫的多型 apply [cite: 208]
+            action.skill.apply(actor, targets, self)
+            # 技能內部的 print 會顯示效果
+        
+        elif action.action_type == ActionType.DEFEND:
+            self.event_log.add(f"{actor.name} is defending.")
+
+    def _check_battle_over(self) -> bool:
+        """判斷勝利或失敗條件 [cite: 83, 161]"""
+        players_alive = any(p.is_alive() for p in self.players)
+        enemies_alive = any(e.is_alive() for e in self.enemies)
+
+        if not players_alive:
+            self.event_log.add("Game Over... The party has been wiped out.")
+            self.terminated = True
+            return True
+        if not enemies_alive:
+            self.event_log.add("Victory! All enemies defeated.")
+            self.terminated = True
+            return True
+        return False
