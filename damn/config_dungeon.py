@@ -1,66 +1,71 @@
-from __future__ import annotations
-from typing import List
-
-from battle_types import Stats, Team
+from battle_types import Stats
 from characters import PlayerCharacter, EnemyCharacter, FireDragon
-from dungeon_env import DungeonFloorConfig
-from ai_strategies import RandomAIStrategy, FocusWeakestAIStrategy
 from skills import SingleTargetAttackSkill, AreaAttackSkill, HealingSkill
+from dungeon_env import DungeonFloorConfig
+from ai_strategies import RandomAIStrategy, FocusWeakestAIStrategy # 成員 C 實作
 
+def create_default_players() -> list:
+    """設定 Kiwi 與隊友的數值與技能 [cite: 92-93, 166]"""
+    # 勇者 Kiwi：平衡型
+    kiwi_skills = [
+        SingleTargetAttackSkill("Kiwi Slash", mp_cost=5, power=10),
+        AreaAttackSkill("Kiwi Whirlwind", mp_cost=12, power=6)
+    ]
+    kiwi = PlayerCharacter(
+        name="Kiwi", 
+        team="players", 
+        base_stats=Stats(max_hp=100, max_mp=30, attack=15, defense=5, speed=12),
+        skills=kiwi_skills
+    )
+    
+    # 補師隊友：支援型
+    healer_skills = [HealingSkill("Holy Light", mp_cost=8, heal_power=20)]
+    healer = PlayerCharacter(
+        name="Healer Bird", 
+        team="players", 
+        base_stats=Stats(max_hp=60, max_mp=50, attack=5, defense=3, speed=10),
+        skills=healer_skills,
+        role="Supporter"
+    )
+    return [kiwi, healer]
 
-def create_default_players() -> List[PlayerCharacter]:
-    """
-    建立玩家隊伍（例如 Knight + Priest）。
-    """
-    # TODO[B/A]:
-    # 1. 定義 Knight / Priest 的 Stats
-    # 2. 幫他們配上技能：
-    #    - Knight: 單體攻擊技
-    #    - Priest: HealingSkill
-    # 3. 回傳 [knight, priest] 或至少一個主控角色
-    raise NotImplementedError
+def build_dungeon_floors() -> list:
+    """建立三層地城的配置 [cite: 94-95, 168]"""
+    
+    def floor_1_enemies():
+        # B1: Slime / Goblin [cite: 169]
+        return [
+            EnemyCharacter("Green Slime", "enemies", Stats(20, 0, 8, 2, 5), ai=RandomAIStrategy()),
+            EnemyCharacter("Goblin", "enemies", Stats(30, 0, 10, 3, 8), ai=RandomAIStrategy())
+        ]
 
+    def floor_2_enemies():
+        # B2: Orc Warrior / Dark Mage [cite: 170]
+        dark_mage_skills = [SingleTargetAttackSkill("Dark Bolt", 5, 12)]
+        return [
+            EnemyCharacter("Orc Warrior", "enemies", Stats(60, 0, 15, 8, 7), ai=FocusWeakestAIStrategy()),
+            EnemyCharacter("Dark Mage", "enemies", Stats(40, 40, 12, 4, 11), 
+                           skills=dark_mage_skills, ai=FocusWeakestAIStrategy())
+        ]
 
-# ------ 敵人工廠：每個函式回傳一個敵人實例 ------
+    def floor_3_enemies():
+        # B3: FireDragon Boss [cite: 171]
+        boss_skills = [
+            SingleTargetAttackSkill("Flame Bite", 0, 15),
+            AreaAttackSkill("Inferno Breath", 20, 25)
+        ]
+        return [
+            FireDragon(
+                name="FireDragon", 
+                team="enemies", 
+                base_stats=Stats(max_hp=250, max_mp=100, attack=20, defense=10, speed=15),
+                skills=boss_skills,
+                enraged_threshold=0.3 # 低於 30% 進入狂暴 [cite: 143]
+            )
+        ]
 
-def make_slime() -> EnemyCharacter:
-    # TODO[B/A]: 設計 Slime 的 Stats + 技能 + 使用 RandomAIStrategy
-    raise NotImplementedError
-
-
-def make_goblin() -> EnemyCharacter:
-    # TODO[B/A]: Goblin 可以攻擊力高一點，使用 RandomAIStrategy 或 FocusWeakestAIStrategy
-    raise NotImplementedError
-
-
-def make_orc_warrior() -> EnemyCharacter:
-    # TODO[B/A]: OrcWarrior 偏坦但攻擊也不低，通常集火玩家
-    raise NotImplementedError
-
-
-def make_dark_mage() -> EnemyCharacter:
-    # TODO[B/A]: DarkMage 可以給一個範圍攻擊技能，使用 FocusWeakestAIStrategy
-    raise NotImplementedError
-
-
-def make_fire_dragon() -> FireDragon:
-    # TODO[B/A/C]:
-    # 1. 設定 Dragon Stats（HP 很高、攻擊高）
-    # 2. 給單體攻擊技能 + 範圍噴火技能
-    # 3. AI 可以先用 Random / FocusWeakest，或留給 FireDragon.decide_action 自己處理
-    raise NotImplementedError
-
-
-def build_dungeon_floors() -> List[DungeonFloorConfig]:
-    """
-    建立三層地下城：
-    B1: Slime Tunnels
-    B2: Dark Ritual Hall
-    B3: Inferno Dragon's Lair（火龍 Boss）
-    """
-    # TODO[B]:
-    # floor1 = DungeonFloorConfig("B1: Slime Tunnels", [make_slime, make_goblin])
-    # floor2 = DungeonFloorConfig("B2: Dark Ritual Hall", [make_orc_warrior, make_dark_mage])
-    # floor3 = DungeonFloorConfig("B3: Inferno Dragon's Lair", [make_fire_dragon], is_boss_floor=True)
-    # return [floor1, floor2, floor3]
-    raise NotImplementedError
+    return [
+        DungeonFloorConfig("Slime Tunnels", floor_1_enemies),
+        DungeonFloorConfig("Dark Ritual Hall", floor_2_enemies),
+        DungeonFloorConfig("Inferno Dragon's Lair", floor_3_enemies, is_boss_floor=True)
+    ]
