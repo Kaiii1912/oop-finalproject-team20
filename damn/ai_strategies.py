@@ -26,8 +26,10 @@ class RandomAIStrategy(EnemyAIStrategy):
     """
 
     def choose_action(self, enemy: "EnemyCharacter", env: "DungeonBattleEnv") -> BattleAction:
-        # TODO[C]: 呼叫 enemy.available_actions(env) 後 random.choice(...)
-        raise NotImplementedError
+        possible_actions = enemy.available_actions(env)
+        if not possible_actions:
+            return BattleAction(actor=enemy, action_type=ActionType.PASS)
+        return random.choice(possible_actions)
 
 
 class FocusWeakestAIStrategy(EnemyAIStrategy):
@@ -36,7 +38,17 @@ class FocusWeakestAIStrategy(EnemyAIStrategy):
     """
 
     def choose_action(self, enemy: "EnemyCharacter", env: "DungeonBattleEnv") -> BattleAction:
-        # TODO[C]:
-        # 1. 找出 env.players 中 hp > 0 且 hp 最低者的 index
-        # 2. 建立一個 BASIC_ATTACK 的 BattleAction 指向該 target
-        raise NotImplementedError
+        alive_players = [p for p in env.players if p.is_alive()]
+        
+        if not alive_players:
+            return BattleAction(actor=enemy, action_type=ActionType.PASS)
+
+        # 找出 HP 絕對值最低的目標
+        target = min(alive_players, key=lambda p: p.hp)
+        target_idx = env.players.index(target)
+
+        return BattleAction(
+            actor=enemy, 
+            action_type=ActionType.BASIC_ATTACK, 
+            target_ids=[target_idx]
+        )
