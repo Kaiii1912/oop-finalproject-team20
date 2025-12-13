@@ -513,11 +513,11 @@ class DungeonPygameApp:
         self.action_buttons.clear()
         player = self.env.players[0]
         
-        button_y = HEIGHT - 100
-        button_w = 140
-        button_h = 45
-        spacing = 10
-        start_x = 40
+        button_y = HEIGHT - 80
+        button_w = 130
+        button_h = 40
+        spacing = 15
+        start_x = 50
         
         self.action_buttons.append(
             Button(start_x, button_y, button_w, button_h, "⚔ Attack", 
@@ -526,7 +526,7 @@ class DungeonPygameApp:
         
         for i, skill in enumerate(player.skills):
             can_use = player.mp >= skill.mp_cost
-            skill_text = f"✨ {skill.name[:12]}"
+            skill_text = f"✨ {skill.name[:10]}"
             
             self.action_buttons.append(
                 Button(start_x + (button_w + spacing) * (i + 1), button_y, 
@@ -534,12 +534,6 @@ class DungeonPygameApp:
                       action_data={"type": "skill", "skill": skill, "index": i},
                       enabled=can_use)
             )
-        
-        auto_text = "🤖 Auto: ON" if not self.manual_mode else "🎮 Manual"
-        self.action_buttons.append(
-            Button(WIDTH - 150, button_y, 130, button_h, auto_text,
-                   action_data={"type": "toggle_auto"})
-        )
 
     def _build_target_buttons(self, is_heal: bool = False):
         self.target_buttons.clear()
@@ -603,6 +597,10 @@ class DungeonPygameApp:
                         # 關卡完成時，按 SPACE 進入傳送門
                         print("[DEBUG] Entering portal to next floor")
                         self._proceed_to_next_floor()
+                    elif self.game_state == "MODE_SELECT":
+                        # 模式選擇中，按 SPACE 切換 MANUAL/AUTO
+                        self.manual_mode = not self.manual_mode
+                        print(f"[DEBUG] Mode toggled to: {'MANUAL' if self.manual_mode else 'AUTO'}")
                     elif self.game_state in ("GAME_OVER", "VICTORY"):
                         # 遊戲結束時重新開始
                         print("[DEBUG] Restarting game")
@@ -625,6 +623,11 @@ class DungeonPygameApp:
                         self._handle_action_select(1)
                     elif event.key == pygame.K_3:
                         self._handle_action_select(2)
+                
+                # ENTER 鍵開始遊戲（MODE_SELECT 狀態）
+                elif event.key == pygame.K_RETURN and self.game_state == "MODE_SELECT":
+                    print(f"[DEBUG] Starting game with mode: {'MANUAL' if self.manual_mode else 'AUTO'}")
+                    self.game_state = "PLAYING"
             
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
@@ -745,7 +748,7 @@ class DungeonPygameApp:
         self.pending_action = action
 
     def _restart_game(self):
-        print("=== RESTARTING GAME ===")  # Debug 訊息
+        print("=== RESTARTING GAME ===")
         players = create_default_players()
         floors = build_dungeon_floors()
         self.env = DungeonBattleEnv(floors=floors, players=players)
@@ -754,15 +757,19 @@ class DungeonPygameApp:
         self.terminated = False
         self.truncated = False
         self.total_reward = 0.0
-        self.game_state = "PLAYING"
+        
+        # 進入模式選擇狀態
+        self.game_state = "MODE_SELECT"
+        self.manual_mode = True  # 預設手動模式
+        
         self.player_turn = True
         self.current_phase = "SELECT_ACTION"
         self.battle_messages.clear()
         self.tile_renderer.generate_debris(self.floor_idx)
-        self.floor_transition.active = False  # 確保過場動畫關閉
-        self.action_animation_active = False  # 確保動作動畫關閉
+        self.floor_transition.active = False
+        self.action_animation_active = False
         self._build_action_buttons()
-        print("=== GAME RESTARTED ===")  # Debug 訊息
+        print("=== SELECT MODE TO START ===")  # Debug 訊息  # Debug 訊息
 
     def _update_logic(self, dt: float) -> None:
         # 樓層轉換動畫
@@ -1102,45 +1109,47 @@ class DungeonPygameApp:
         pygame.draw.rect(surface, (25, 22, 18), menu_rect)
         pygame.draw.line(surface, (80, 70, 55), (0, HEIGHT - 120), (WIDTH, HEIGHT - 120), 3)
         
-        # === 模式顯示區（右上角）===
-        agent_name = self.agent_types[self.agent_mode_idx][0]
-        mode_text = "🎮 MANUAL" if self.manual_mode else "🤖 AUTO"
-        mode_color = GOLD if self.manual_mode else (100, 180, 255)
-        
-        # Agent 類型
-        agent_surf = self.font_small.render(f"AI: {agent_name}", True, (150, 140, 130))
-        surface.blit(agent_surf, (WIDTH - 150, HEIGHT - 115))
-        
-        # 手動/自動模式
-        mode_surf = self.font_mid.render(mode_text, True, mode_color)
-        surface.blit(mode_surf, (WIDTH - 150, HEIGHT - 95))
-        
-        # 按鍵提示
-        hint_surf = self.font_tiny.render("[SPACE] toggle  [Q] AI", True, (100, 95, 90))
-        surface.blit(hint_surf, (WIDTH - 150, HEIGHT - 70))
-        
-        # === 狀態提示（左邊）===
+        # === 第一行：狀態提示（最上方）===
         if self.manual_mode:
             if self.current_phase == "SELECT_ACTION" and self.player_turn:
-                status = "▶ Choose your action:"
+                status = ">> Choose action (1/2/3 or click):"
                 color = GOLD
             elif self.current_phase == "SELECT_TARGET":
-                status = "▶ Select target (click or press 1-3):"
+                status = ">> Select target:"
                 color = (100, 200, 255)
             elif self.current_phase == "ENEMY_TURN":
-                status = "⏳ Enemy turn..."
+                status = "Enemy turn..."
                 color = HP_RED
             else:
-                status = "⚔ Executing..."
+                status = "Executing..."
                 color = WHITE
         else:
-            status = "🤖 Auto mode running... (SPACE to take control)"
+            status = "Auto mode running..."
             color = (100, 180, 255)
         
         status_surf = self.font_small.render(status, True, color)
-        surface.blit(status_surf, (40, HEIGHT - 115))
+        surface.blit(status_surf, (20, HEIGHT - 115))
         
-        # 動作按鈕（僅手動模式且玩家回合時顯示）
+        # === 第一行右側：模式顯示（更清晰）===
+        agent_name = self.agent_types[self.agent_mode_idx][0]
+        mode_text = "MANUAL" if self.manual_mode else "AUTO"
+        mode_color = GOLD if self.manual_mode else (100, 180, 255)
+        
+        # 分開顯示，更清晰
+        # 模式
+        mode_surf = self.font_small.render(mode_text, True, mode_color)
+        surface.blit(mode_surf, (WIDTH - 420, HEIGHT - 115))
+        
+        # AI 類型
+        ai_surf = self.font_tiny.render(f"AI: {agent_name}", True, (150, 145, 140))
+        surface.blit(ai_surf, (WIDTH - 340, HEIGHT - 115))
+        
+        # 按鍵提示（更明顯）
+        key_hint = "[Q] Switch AI    [SPACE] Toggle Mode"
+        hint_surf = self.font_tiny.render(key_hint, True, (180, 175, 170))
+        surface.blit(hint_surf, (WIDTH - 240, HEIGHT - 115))
+        
+        # === 第二行：動作按鈕（中間）===
         if self.current_phase == "SELECT_ACTION" and self.player_turn and self.manual_mode:
             for btn in self.action_buttons:
                 btn.draw(surface, self.font_small)
@@ -1205,7 +1214,44 @@ class DungeonPygameApp:
 
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         
-        if self.game_state == "FLOOR_COMPLETE":
+        if self.game_state == "MODE_SELECT":
+            # === 模式選擇畫面 ===
+            overlay.fill((0, 0, 0, 180))
+            surface.blit(overlay, (0, 0))
+            
+            # 標題
+            title = self.font_title.render("SELECT MODE", True, GOLD)
+            surface.blit(title, title.get_rect(center=(WIDTH // 2, 100)))
+            
+            # 當前設定
+            agent_name = self.agent_types[self.agent_mode_idx][0]
+            mode_text = "MANUAL" if self.manual_mode else "AUTO"
+            mode_color = GOLD if self.manual_mode else (100, 180, 255)
+            
+            # 模式顯示
+            mode_label = self.font_mid.render("Mode:", True, WHITE)
+            surface.blit(mode_label, (WIDTH // 2 - 150, HEIGHT // 2 - 60))
+            mode_value = self.font_big.render(mode_text, True, mode_color)
+            surface.blit(mode_value, (WIDTH // 2 + 20, HEIGHT // 2 - 65))
+            
+            # AI 顯示
+            ai_label = self.font_mid.render("AI:", True, WHITE)
+            surface.blit(ai_label, (WIDTH // 2 - 150, HEIGHT // 2 - 20))
+            ai_value = self.font_big.render(agent_name, True, (150, 200, 255))
+            surface.blit(ai_value, (WIDTH // 2 + 20, HEIGHT // 2 - 25))
+            
+            # 按鍵提示
+            hint1 = self.font_small.render("[SPACE]  Toggle Manual / Auto", True, (180, 175, 170))
+            surface.blit(hint1, hint1.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 40)))
+            
+            hint2 = self.font_small.render("[Q]  Switch AI Type", True, (180, 175, 170))
+            surface.blit(hint2, hint2.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 70)))
+            
+            # 開始提示
+            start_hint = self.font_mid.render(">>> Press ENTER to START <<<", True, (255, 255, 150))
+            surface.blit(start_hint, start_hint.get_rect(center=(WIDTH // 2, HEIGHT - 100)))
+        
+        elif self.game_state == "FLOOR_COMPLETE":
             # === 關卡完成 - 傳送門畫面 ===
             overlay.fill((0, 0, 0, 160))
             surface.blit(overlay, (0, 0))
@@ -1215,33 +1261,28 @@ class DungeonPygameApp:
             portal_pulse = math.sin(self.animation_time * 4) * 10
             portal_size = int(60 + portal_pulse)
             
-            # 外圈
             pygame.draw.ellipse(surface, (100, 200, 255), 
                               (WIDTH // 2 - portal_size, portal_y - portal_size // 2, 
                                portal_size * 2, portal_size), 4)
-            # 內圈
             pygame.draw.ellipse(surface, (150, 230, 255), 
                               (WIDTH // 2 - portal_size + 15, portal_y - portal_size // 2 + 10, 
                                portal_size * 2 - 30, portal_size - 20), 2)
-            # 中心
             pygame.draw.ellipse(surface, (200, 255, 255), 
                               (WIDTH // 2 - 20, portal_y - 10, 40, 20))
             
-            # 文字
-            title = self.font_title.render("✨ FLOOR CLEARED!", True, GOLD)
+            title = self.font_title.render("FLOOR CLEARED!", True, GOLD)
             surface.blit(title, title.get_rect(center=(WIDTH // 2, 100)))
             
-            next_floor = self.floor_idx + 2  # 顯示下一層編號
+            next_floor = self.floor_idx + 2
             portal_text = self.font_mid.render(f"Portal to B{next_floor}F opened!", True, (100, 200, 255))
             surface.blit(portal_text, portal_text.get_rect(center=(WIDTH // 2, portal_y + 60)))
             
-            # 模式切換提示
             agent_name = self.agent_types[self.agent_mode_idx][0]
             mode_text = "MANUAL" if self.manual_mode else "AUTO"
-            mode_info = self.font_small.render(f"Current: {mode_text} mode | AI: {agent_name}", True, (180, 175, 170))
+            mode_info = self.font_small.render(f"Current: {mode_text} | AI: {agent_name}", True, (180, 175, 170))
             surface.blit(mode_info, mode_info.get_rect(center=(WIDTH // 2, HEIGHT - 150)))
             
-            hint1 = self.font_small.render("[Q] Switch AI  |  [SPACE] Toggle Manual/Auto", True, (150, 145, 140))
+            hint1 = self.font_small.render("[Q] Switch AI    [SPACE] Toggle Mode", True, (150, 145, 140))
             surface.blit(hint1, hint1.get_rect(center=(WIDTH // 2, HEIGHT - 120)))
             
             enter_hint = self.font_mid.render(">>> Press SPACE to enter portal <<<", True, (255, 255, 150))

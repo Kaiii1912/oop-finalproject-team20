@@ -77,6 +77,10 @@ class SingleTargetAttackSkill(Skill):
         raw_damage = user.stats.attack + self.power
         actual_dmg = target.take_damage(raw_damage)
         
+        # 追蹤玩家受傷量
+        if target.team == Team.PLAYERS:
+            env.damage_taken_total += actual_dmg
+        
         print(f"[{self.name}] {user.name} hits {target.name} for {actual_dmg} dmg.")
 
 
@@ -100,6 +104,10 @@ class AreaAttackSkill(Skill):
             raw_damage = user.stats.attack + self.power
             actual_dmg = target.take_damage(raw_damage)
             print(f"  -> {target.name} took {actual_dmg} damage.")
+            
+            # 追蹤玩家受傷量
+            if target.team == Team.PLAYERS:
+                env.damage_taken_total += actual_dmg
 
 
 class HealingSkill(Skill):

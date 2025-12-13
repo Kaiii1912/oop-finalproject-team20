@@ -44,6 +44,9 @@ class DungeonBattleEnv:
         self.event_log = EventLog()
         self.terminated = False
         self.turn_order: List[Character] = []
+        
+        # 追蹤玩家累計受傷量（用於扣分）
+        self.damage_taken_total = 0
 
     def reset(self, floor_idx: int = 0):
         """重置地城至特定樓層"""
@@ -94,16 +97,31 @@ class DungeonBattleEnv:
 
         terminated = self.terminated
         
-        # 改進分數計算：殺死敵人數 * 10，清關 +50
+        # === 改進分數計算（用於比較算法優劣）===
         dead_enemies = sum(1 for e in self.enemies if not e.is_alive())
+        
+        # 基礎分數：殺敵獎勵
         reward = dead_enemies * 10.0
+        
+        # 清關獎勵
         if terminated and any(p.is_alive() for p in self.players):
-            reward += 50.0  # 清關獎勵
+            reward += 50.0
             # Boss 獎勵
             if any("Dragon" in e.name for e in self.enemies):
                 reward += 150.0
+            
+            # 生存獎勵：每個存活玩家 +20
+            alive_players = sum(1 for p in self.players if p.is_alive())
+            reward += alive_players * 20.0
         
-        return self._get_obs(), reward, terminated, False, {"log": self.event_log.logs}
+        # === 受傷扣分：每受到 1 點傷害扣 0.05 分 ===
+        reward -= self.damage_taken_total * 0.05
+        
+        # 失敗懲罰
+        if terminated and not any(p.is_alive() for p in self.players):
+            reward = -100.0
+        
+        return self._get_obs(), reward, terminated, False, {"log": self.event_log.logs, "damage_taken": self.damage_taken_total}
 
     def _apply_action(self, action: BattleAction):
         actor = action.actor
@@ -125,6 +143,9 @@ class DungeonBattleEnv:
         if action.action_type == ActionType.BASIC_ATTACK and targets:
             dmg = targets[0].take_damage(actor.stats.attack)
             self.event_log.add(f"{actor.name} attacked {targets[0].name} for {dmg} damage.")
+            # 追蹤玩家受到的傷害
+            if targets[0].team == Team.PLAYERS:
+                self.damage_taken_total += dmg
         
         elif action.action_type == ActionType.USE_SKILL and action.skill:
             # 利用成員 A 寫的多型 apply
