@@ -19,11 +19,13 @@ python mountain_car.py --render --episodes 10
 ```
 
 ### **Part 2: Frozen Lake**
-Run the Frozen Lake environment:
+Train a Q-learning agent on the 8x8 Frozen Lake environment and evaluate its performance:
 
 ```bash
 python frozen_lake.py
 ```
+
+The script trains for 15,000 episodes, saves the Q-table, then evaluates on 800 episodes and displays the success rate, which ranging from 58% to 65%.
 
 ### **Part 3: Kiwi Dungeon RPG**
 
