@@ -23,10 +23,11 @@ def run(episodes, is_training=True, render=False):
         q = pickle.load(f)
         f.close()
 
-    learning_rate_a = 0.9 # alpha or learning rate
-    discount_factor_g = 0.9 # gamma or discount rate. Near 0: more weight/reward placed on immediate state. Near 1: more on future state.
+    learning_rate_a = 0.1 # alpha or learning rate
+    discount_factor_g = 0.99 # gamma or discount rate. Near 0: more weight/reward placed on immediate state. Near 1: more on future state.
     epsilon = 1         # 1 = 100% random actions
-    epsilon_decay_rate = 0.0001        # epsilon decay rate. 1/0.0001 = 10,000
+    min_exploration_rate = 0.01
+    epsilon_decay_rate = 0.00008        # epsilon decay rate. 1/0.0001 = 10,000
     rng = np.random.default_rng()   # random number generator
 
     rewards_per_episode = np.zeros(episodes)
@@ -51,10 +52,10 @@ def run(episodes, is_training=True, render=False):
 
             state = new_state
 
-        epsilon = max(epsilon - epsilon_decay_rate, 0)
+        epsilon = max(epsilon - epsilon_decay_rate, min_exploration_rate)
 
-        if(epsilon==0):
-            learning_rate_a = 0.0001
+       # if(epsilon==0):
+        #    learning_rate_a = 0.0001
 
         if reward == 1:
             rewards_per_episode[i] = 1
@@ -68,7 +69,7 @@ def run(episodes, is_training=True, render=False):
     plt.savefig('frozen_lake8x8.png')
     
     if is_training == False:
-        print(print_success_rate(rewards_per_episode))
+        print_success_rate(rewards_per_episode)
 
     if is_training:
         f = open("frozen_lake8x8.pkl","wb")
@@ -76,6 +77,6 @@ def run(episodes, is_training=True, render=False):
         f.close()
 
 if __name__ == '__main__':
-    # run(15000, is_training=True, render=False)
-
-    run(10, is_training=False, render=True)
+    run(15000, is_training=True, render=False)
+    print("train done, start running...")
+    run(1000, is_training=False, render=False)
